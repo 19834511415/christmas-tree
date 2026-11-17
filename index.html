@@ -568,7 +568,7 @@
                 const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
                 // 模型双源：优先 CDN 加速，失败自动回退同源本地文件
                 const MODEL_URLS = [
-                    "https://cdn.jsdelivr.net/gh/19834511415/christmas-tree@main/models/hand_landmarker.task",
+                    "https://cdn.jsdelivr.net/gh/19834511415/christmas-tree@4a94fb5/models/hand_landmarker.task",
                     "./models/hand_landmarker.task"
                 ];
                 updateStatus("正在加载手势模型…", "#ffaa00");
