@@ -566,13 +566,26 @@
         async function setupMediaPipe() {
             try {
                 const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
-                const handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `./models/hand_landmarker.task`,
-                        delegate: "GPU"
-                    },
-                    runningMode: "VIDEO", numHands: 1
-                });
+                // 模型双源：优先 CDN 加速，失败自动回退同源本地文件
+                const MODEL_URLS = [
+                    "https://cdn.jsdelivr.net/gh/19834511415/christmas-tree@main/models/hand_landmarker.task",
+                    "./models/hand_landmarker.task"
+                ];
+                updateStatus("正在加载手势模型…", "#ffaa00");
+                let handLandmarker = null;
+                for (const modelUrl of MODEL_URLS) {
+                    try {
+                        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                            baseOptions: { modelAssetPath: modelUrl, delegate: "GPU" },
+                            runningMode: "VIDEO", numHands: 1
+                        });
+                        console.log("[模型] 加载成功:", modelUrl);
+                        break;
+                    } catch (modelErr) {
+                        console.warn("[模型] 该地址加载失败，尝试下一个:", modelUrl, modelErr);
+                    }
+                }
+                if (!handLandmarker) throw new Error("MODEL_LOAD_FAILED: 所有模型地址均加载失败");
                 
                 const video = document.getElementById("input-video");
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -584,9 +597,16 @@
                     predictWebcam(handLandmarker, video);
                 });
             } catch (error) {
-                console.error(error);
-                document.getElementById('loading').innerText = "Camera Access Denied";
-                updateStatus("无法访问摄像头", "#f00");
+                console.error("[初始化失败]", error);
+                const errName = (error && error.name) || "";
+                const CAM_ERR = ["NotAllowedError", "NotFoundError", "NotReadableError", "OverconstrainedError", "SecurityError"];
+                if (CAM_ERR.indexOf(errName) !== -1) {
+                    document.getElementById('loading').innerText = "CAMERA DENIED";
+                    updateStatus("摄像头不可用：" + errName + "（请点地址栏左侧图标允许摄像头）", "#f00");
+                } else {
+                    document.getElementById('loading').innerText = "AI MODEL FAILED";
+                    updateStatus("手势模型加载失败：" + ((error && error.message) || String(error)), "#f00");
+                }
             }
         }
 
