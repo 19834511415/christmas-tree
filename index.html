@@ -701,17 +701,23 @@
                 Math.pow(landmarks[4].y - landmarks[8].y, 2)
             );
             
-            const isPinch = dPinch < 0.08;
+            const isPinch = dPinch < 0.10;
             const isFist = folded >= 3; 
             const isOpen = !isFist && !isPinch;
 
             // 状态机
-            if (isPinch && currentState === STATE.SCATTER) {
-                if (photoMeshes.length > 0) {
-                    switchToZoom();
-                    updateStatus("抓取照片: 聚焦回忆", "#ffd700");
+            if (isPinch) {
+                if (currentState === STATE.SCATTER) {
+                    if (photoMeshes.length > 0) {
+                        switchToZoom();
+                        updateStatus("抓取照片: 聚焦回忆", "#ffd700");
+                    } else {
+                        updateStatus("请先点击底部「上传纪念照片」", "#aaa");
+                    }
+                } else if (currentState === STATE.ZOOM) {
+                    updateStatus("已聚焦照片, 张手可退出", "#ffd700");
                 } else {
-                    updateStatus("请先点击右下角上传照片", "#aaa");
+                    updateStatus("捏合抓取前请先张手散开", "#aaa");
                 }
             } else if (isFist) {
                 currentState = STATE.TREE;
@@ -828,6 +834,14 @@
             
             photoMeshes.push(mesh);
             mainGroup.add(mesh);
+
+            // 上传照片后自动散开, 让用户可直接捏合抓取
+            if (currentState === STATE.TREE) {
+                currentState = STATE.SCATTER;
+                lastHandPos.x = handPos.x;
+                lastHandPos.y = handPos.y;
+            }
+            updateStatus("照片已加入星云: 捏合即可抓取", "#ffd700");
         }
 
         // 启动
