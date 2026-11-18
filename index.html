@@ -420,9 +420,10 @@
 
         function handlePhysicsRotation() {
             if (currentState === STATE.ZOOM) {
-                // 缩放模式下停止旋转，方便观看
-                rotationVelocity.x *= 0.8;
-                rotationVelocity.y *= 0.8;
+                // 聚焦时彻底冻结整体旋转，让照片稳稳停在眼前
+                rotationVelocity.x = 0;
+                rotationVelocity.y = 0;
+                mainGroup.rotation.x *= 0.9;
             } else if (currentState === STATE.SCATTER) {
                 if (isHandPresent) {
                     const deltaX = handPos.x - lastHandPos.x;
@@ -516,48 +517,34 @@
         }
 
         function updatePhotoLogic() {
-            // 获取相机在 mainGroup 局部坐标系下的反向位置
-            // 用于让照片始终朝向屏幕
-            _tempVec3.copy(camera.position).applyMatrix4(mainGroup.matrixWorld.clone().invert());
+            camera.updateMatrixWorld(); // 保证用最新相机矩阵算焦点位置
 
             photoMeshes.forEach((mesh, idx) => {
-                let targetPos, targetScale = 2.0; 
-                
-                if (currentState === STATE.ZOOM && idx === zoomTargetIndex) {
-                    // 1. 计算镜头正前方80单位的世界坐标
-                    const worldTarget = new THREE.Vector3(0, 0, 80);
-                    worldTarget.applyMatrix4(camera.matrixWorld); // 转换到世界坐标(如果相机动了)
-                    
-                    // 简单做法：直接取相机Z轴前方固定距离
-                    // 由于 mainGroup 在转动，我们需要求这一点的局部坐标
-                    // 实际上让照片飞到 (0,0,80) 相对于相机的点更简单，但为了保持层级，我们转换坐标
-                    
-                    // 简化策略：将目标设为相机前方，并应用 group 的逆变换
-                    const camFront = new THREE.Vector3(0, 0, 80); // 相机空间
-                    camFront.applyMatrix4(camera.matrixWorld); // 世界空间
-                    targetPos = mainGroup.worldToLocal(camFront); // 局部空间
+                let targetPos, targetScale = 2.0;
+                const isFocused = currentState === STATE.ZOOM && idx === zoomTargetIndex;
 
-                    targetScale = 5.0;
-                    mesh.lookAt(camera.position); // 始终朝向相机
+                if (isFocused) {
+                    // 相机空间里 -Z 才是镜头正前方，取前方 45 单位作为照片最终落点
+                    const camFront = new THREE.Vector3(0, 0, -45);
+                    camFront.applyMatrix4(camera.matrixWorld);   // 转到世界坐标
+                    targetPos = mainGroup.worldToLocal(camFront); // 转到 mainGroup 局部坐标
+                    targetScale = 6.0;
                 } else {
                     targetPos = currentState === STATE.TREE ? mesh.userData.treePos : mesh.userData.scatterPos;
-                    if(currentState !== STATE.TREE) mesh.position.y += Math.sin(time+idx)*0.02;
-                    
-                    // 非聚焦状态下，根据基础旋转+公转
-                    if(currentState === STATE.SCATTER) targetScale = 3.0;
+                    if (currentState !== STATE.TREE) mesh.position.y += Math.sin(time + idx) * 0.02;
+                    if (currentState === STATE.SCATTER) targetScale = 3.0;
 
                     if (currentState === STATE.TREE) {
-                         mesh.rotation.copy(mesh.userData.baseRot);
-                         mesh.rotation.y += 0.01;
-                    } else {
-                        mesh.lookAt(camera.position);
+                        mesh.rotation.copy(mesh.userData.baseRot);
+                        mesh.rotation.y += 0.01;
                     }
                 }
-                
-                mesh.position.lerp(targetPos, 0.1);
-                
-                const currentScale = mesh.scale.x;
-                const newScale = THREE.MathUtils.lerp(currentScale, targetScale, 0.1);
+
+                // 先移位置、再朝向镜头，避免"先转头后挪身"的闪动
+                mesh.position.lerp(targetPos, isFocused ? 0.15 : 0.1);
+                if (currentState !== STATE.TREE) mesh.lookAt(camera.position);
+
+                const newScale = THREE.MathUtils.lerp(mesh.scale.x, targetScale, 0.12);
                 mesh.scale.setScalar(newScale);
             });
         }
