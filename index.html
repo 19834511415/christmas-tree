@@ -659,6 +659,7 @@
             }
         }
 
+        let openFrames = 0;
         function handleGesture(landmarks) {
             // 计算手掌中心
             const palmX = 1 - (landmarks[0].x + landmarks[9].x) / 2; // 镜像翻转 X
@@ -668,59 +669,64 @@
             handPos.x = handPos.x * 0.7 + palmX * 0.3;
             handPos.y = handPos.y * 0.7 + palmY * 0.3;
 
-            // 简单的手势判定算法
-            let folded = 0;
-            const tips = [8,12,16,20];
-            const bases = [5,9,13,17];
-            
-            // 指尖到指根距离判定握拳
-            tips.forEach((tipIdx, i) => { 
-                const d = Math.sqrt(
-                    Math.pow(landmarks[tipIdx].x - landmarks[0].x, 2) + 
-                    Math.pow(landmarks[tipIdx].y - landmarks[0].y, 2)
-                );
-                if(d < 0.25) folded++; 
+            // 手指伸直检测：指尖比 PIP 关节离手腕更远 = 伸直
+            const TIP_IDX = [8, 12, 16, 20];
+            const PIP_IDX = [6, 10, 14, 18];
+            let extended = 0;
+            let curled = 0;
+            TIP_IDX.forEach((t, i) => {
+                const dTip = Math.hypot(landmarks[t].x - landmarks[0].x, landmarks[t].y - landmarks[0].y);
+                const dPip = Math.hypot(landmarks[PIP_IDX[i]].x - landmarks[0].x, landmarks[PIP_IDX[i]].y - landmarks[0].y);
+                if (dTip > dPip * 1.05 && dTip > 0.22) extended++;
+                else curled++;
             });
-            
-            // 捏合检测 (食指拇指距离)
-            const dPinch = Math.sqrt(
-                Math.pow(landmarks[4].x - landmarks[8].x, 2) + 
-                Math.pow(landmarks[4].y - landmarks[8].y, 2)
-            );
-            
-            const isPinch = dPinch < 0.10;
-            const isFist = folded >= 3; 
+
+            // 捏合检测 (拇指与食指指尖距离)
+            const dPinch = Math.hypot(landmarks[4].x - landmarks[8].x, landmarks[4].y - landmarks[8].y);
+
+            // 握拳优先：四指基本全卷
+            const isFist = curled >= 3;
+            // 捏合：指尖靠近，且中指/无名指/小指中至少 2 根伸直（排除握拳被误判为捏合）
+            const isPinch = !isFist && dPinch < 0.11 && extended >= 1;
             const isOpen = !isFist && !isPinch;
 
-            // 状态机
-            if (isPinch) {
-                if (currentState === STATE.SCATTER) {
-                    if (photoMeshes.length > 0) {
-                        switchToZoom();
-                        updateStatus("抓取照片: 聚焦回忆", "#ffd700");
-                    } else {
-                        updateStatus("请先点击底部「上传纪念照片」", "#aaa");
+            // 状态机：握拳=聚合圣诞树，捏合=聚焦照片，张手=星云散开
+            if (isFist) {
+                openFrames = 0;
+                if (currentState !== STATE.TREE) {
+                    currentState = STATE.TREE;
+                    zoomTargetIndex = -1;
+                    rotationVelocity.x = 0;
+                    rotationVelocity.y = 0;
+                }
+                updateStatus("握拳: 聚合形态", "#0f0");
+            } else if (isPinch) {
+                openFrames = 0;
+                if (photoMeshes.length === 0) {
+                    updateStatus("请先点击底部「上传纪念照片」", "#aaa");
+                } else if (currentState !== STATE.ZOOM) {
+                    switchToZoom();
+                    updateStatus("抓取照片: 聚焦回忆", "#ffd700");
+                } else {
+                    updateStatus("已聚焦照片, 张手可退出", "#ffd700");
+                }
+            } else if (isOpen) {
+                openFrames++;
+                if (currentState === STATE.ZOOM) {
+                    // 连续几帧张手才退出，避免手势抖动导致照片一闪就没
+                    if (openFrames >= 4) {
+                        currentState = STATE.SCATTER;
+                        zoomTargetIndex = -1;
                     }
-                } else if (currentState === STATE.ZOOM) {
                     updateStatus("已聚焦照片, 张手可退出", "#ffd700");
                 } else {
-                    updateStatus("捏合抓取前请先张手散开", "#aaa");
+                    if (currentState === STATE.TREE) {
+                        currentState = STATE.SCATTER;
+                        lastHandPos.x = handPos.x;
+                        lastHandPos.y = handPos.y;
+                    }
+                    updateStatus("张手: 星云散开 (挥手旋转)", "#00aaff");
                 }
-            } else if (isFist) {
-                currentState = STATE.TREE;
-                zoomTargetIndex = -1;
-                rotationVelocity.x = 0; rotationVelocity.y = 0;
-                updateStatus("握拳: 聚合形态", "#0f0");
-            } else if (isOpen) {
-                if (currentState === STATE.ZOOM && !isPinch) {
-                    currentState = STATE.SCATTER;
-                    zoomTargetIndex = -1;
-                } else if (currentState === STATE.TREE) {
-                    currentState = STATE.SCATTER;
-                    // 重置惯性位置避免跳变
-                    lastHandPos.x = handPos.x; lastHandPos.y = handPos.y;
-                }
-                updateStatus("张手: 星云散开 (挥手旋转)", "#00aaff");
             }
         }
         
